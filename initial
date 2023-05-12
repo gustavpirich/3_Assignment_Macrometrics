@@ -1,44 +1,80 @@
 ---
-title: "Assignment 3"
-author: "Elisabeth Fidrmuc"
-date: "2023-05-12"
-output: pdf_document
+title: '**Advanced Macroeconometrics -- Assignment 2**'
+author:
+- Gustav Pirich (h11742049@s.wu.ac.at)
+- Elisabeth Fidlaczeck (h11775903@s.wu.ac.at)
+- Hannes Wilkovits (h11712262@s.wu.ac.at)
+date: "May 10, 2023"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+    df_print: paged
+header-includes:
+- \usepackage{tcolorbox}
+- \usepackage{bm}
+papersize: a4
+geometry: margin = 2cm
+urlcolor: Mahogany
 ---
 
-```{r setup,results='hide',warning=FALSE,message=FALSE}
+```{r, setup, include = FALSE}
+#knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+knitr::opts_chunk$set(tidy.opts = list(width.cutoff = 80), tidy = TRUE)
+library(lmtest)
+library(tidyverse)
+library(sandwich)
+library(broom)
 library(rstanarm)
 library(stargazer)
 library(bayesplot)
 ```
 
-# Exercise 1
+\vspace{2em}
+
+\begin{tcolorbox}
+\centering \itshape The executable code that was used in compiling the assignment is available on GitHub at \url{https://github.com/maxmheinze/macrometrics}.
+\end{tcolorbox}
+
+\newpage
 
 ```{r}
-rugged <- read.csv("C:/Users/elisa/Dropbox/Advanced Macroeconometrics/Homework 3/rugged_data.csv")
+rugged <- read.csv("~/Library/Mobile Documents/com~apple~CloudDocs/Wirtschaftsuniversitaet/MASTER/Advanced Macroeconometrics/3_asssignment/rugged_data.csv")
+
 head(rugged)[,c("rgdppc_2000","rugged","dist_coast","cont_africa","pop_1400")]
 ```
 
-(@) Reproduce the main result, given in Table 1, Column 5 (they use HC1 standard errors), of Nunn and
+(1) Reproduce the main result, given in Table 1, Column 5 (they use HC1 standard errors), of Nunn and
 Puga (2012) by fitting a model with the following (interacted) variables:
 
 $$\log rgdppc_{2000} \approx (rugged+dist-coast) \times africa$$
 
-
 ```{r,results='hide'}
 clm1 <- lm(log(rgdppc_2000)~(rugged+dist_coast)*cont_africa,data=rugged)
+```
+
+```{r}
+clm1 <- coeftest(clm1, vcov = vcovHC, type = "HC1")
+#reporducing table 1
+stargazer(clm1, type = "html")
+```
+
+```{r,results='hide'}
 blm1 <- stan_glm(log(rgdppc_2000)~(rugged+dist_coast)*cont_africa,data=rugged, seed=111)
+
 table1 <- round(cbind(coef(clm1),coef(blm1)),3)
 colnames(table1) <- c("Classical Linear Regression","Bayesian Regression")
 ```
 
 
 ```{r,results='asis',message=FALSE}
-stargazer(table1,out="Table 1.html")
+stargazer(table1,out="Table 1.html", type = "html")
 ```
 
 We get very similar results to the original table both for the classical linear model as well as for the Bayesian estimation.
 
-(@) Plot posterior samples of the ruggedness effect in Africa against the effect in the rest of the world in a scatterplot. What can you say about the effect?
+(2) Plot posterior samples of the ruggedness effect in Africa against the effect in the rest of the world in a scatterplot. What can you say about the effect?
 
 ```{r}
 posterior_sample <- as.data.frame(blm1)
@@ -51,10 +87,10 @@ plot(posterior_sample$rugged,posterior_sample$`rugged:cont_africa`,
 
 The ruggedness effect in Africa and that in the rest of the world seem to be negatively correlated. A larger ruggedness effect in the rest of the world goes in hand with a smaller one in Africa.
 
-(@) Estimate three additional models — one without the distance to coast, one that uses population in 1400 (use log 1+pop) instead, and one with both controls.
-
+(3) Estimate three additional models — one without the distance to coast, one that uses population in 1400 (use log 1+pop) instead, and one with both controls.
 
 ```{r,results='hide'}
+#Bayesian estimation
 blm2 <- stan_glm(log(rgdppc_2000)~rugged*cont_africa,data=rugged, seed=111)
 blm3 <- stan_glm(log(rgdppc_2000)~(rugged+log(1+pop_1400))*cont_africa,data=rugged, seed=111)
 blm4 <- stan_glm(log(rgdppc_2000)~(rugged+dist_coast+log(1+pop_1400))*cont_africa,data=rugged, seed=111)
@@ -65,20 +101,32 @@ Model2 <- c(coef(blm2)[1:2],NA,NA,coef(blm2)[3:4],NA,NA)
 Model3 <- c(coef(blm3)[1:2],NA,coef(blm3)[3:5],NA,coef(blm3)[6])
 table2 <- round(cbind(Model1,Model2,Model3,Model4=coef(blm4)),3)
 rownames(table2) <- labels
+
+
+#Classical Estimation
+clm2 <- lm(log(rgdppc_2000)~rugged*cont_africa,data=rugged)
+clm3 <- lm(log(rgdppc_2000)~(rugged+log(1+pop_1400))*cont_africa,data=rugged)
+clm4 <- lm(log(rgdppc_2000)~(rugged+dist_coast+log(1+pop_1400))*cont_africa,data=rugged)
+
+labels <- row.names(cbind(coef(clm4)))
+Model1 <- c(coef(clm1)[1:3],NA,coef(clm1)[4:6],NA)
+Model2 <- c(coef(clm2)[1:2],NA,NA,coef(clm2)[3:4],NA,NA)
+Model3 <- c(coef(clm3)[1:2],NA,coef(clm3)[3:5],NA,coef(clm3)[6])
+table3 <- round(cbind(Model1,Model2,Model3,Model4=coef(clm4)),3)
+rownames(table3) <- labels
 ```
 
 ```{r,results='asis',message=FALSE}
-stargazer(table2,out="Table 2.html")
+#stargazer(table2,out="Table2.html")
 ```
 
-
-(@)  Discuss (conceptually different) approaches to selecting one of these models for inference. Hint: Consider the difference between causal inference and other inference tasks.
+(4)  Discuss (conceptually different) approaches to selecting one of these models for inference. Hint: Consider the difference between causal inference and other inference tasks.
 
 There are several ways to select the "best" models, such as
 
 - **Bayesian model comparison:** Use the Widely Applicable Information Criterion (WAIC) or the Leave-One-Out Cross-Validation (LOO) to compare the models' predictive performance. Lower values of WAIC or LOO indicate better model fit. These methods account for both model complexity and fit to the data.
 - **Model selection criteria:** Use other model selection criteria like the Akaike Information Criterion (AIC) or the Bayesian Information Criterion (BIC). Lower AIC or BIC values indicate better model fit, but these criteria do not account for model complexity as well as WAIC or LOO.
-_ **Visual inspection of results:** Examine the posterior distributions, convergence diagnostics, and model assumptions for each model. Look for models that provide better parameter estimates, narrower posterior distributions, and better convergence properties. Visual inspection can help gain insights into the models' behavior and identify potential issues or improvements.
+- **Visual inspection of results:** Examine the posterior distributions, convergence diagnostics, and model assumptions for each model. Look for models that provide better parameter estimates, narrower posterior distributions, and better convergence properties. Visual inspection can help gain insights into the models' behavior and identify potential issues or improvements.
 
 Of course, optimal selection depends on the goal of the analysis. Whilst causal inference might be the primary objective in one, model fit and prediction could be more relevant in another setting. Depending of the goal, different aspects are more important.
 
@@ -101,7 +149,7 @@ Of course, optimal selection depends on the goal of the analysis. Whilst causal 
 
 It's essential to strike a balance between the causal inferential aspect and the model's fit and predictive capabilities. A model that fits the data well and provides accurate predictions might not necessarily capture the underlying causal relationships accurately. Conversely, a model that addresses causal inference comprehensively might not have the best fit or predictive performance.
 
-Ultimately, the selection of the best model should be based on a careful consideration of both causal inference and model fit/prediction, as well as the specific goals and requirements of your analysis. It's often helpful to assess models from multiple perspectives and use multiple criteria to make a well-informed decision.
+Ultimately, the selection of the best model should be based on a careful consideration of both causal inference and model fit prediction, as well as the specific goals and requirements of your analysis. It's often helpful to assess models from multiple perspectives and use multiple criteria to make a well-informed decision.
 
 
 In our example, we use Bayesian model comparison to determine the best fitting model. 
