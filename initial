@@ -28,7 +28,7 @@ library(sandwich)
 library(broom)
 library(rstanarm)
 library(stargazer)
-library(bayesplot)
+library(bridgesampling)
 ```
 
 \vspace{2em}
@@ -45,22 +45,17 @@ rugged <- read.csv("~/Library/Mobile Documents/com~apple~CloudDocs/Wirtschaftsun
 head(rugged)[,c("rgdppc_2000","rugged","dist_coast","cont_africa","pop_1400")]
 ```
 
-(1) Reproduce the main result, given in Table 1, Column 5 (they use HC1 standard errors), of Nunn and
-Puga (2012) by fitting a model with the following (interacted) variables:
+# Exercise 1 
+## (1) Reproduce the main result, given in Table 1, Column 5 (they use HC1 standard errors), of Nunn and Puga (2012) by fitting a model with the following (interacted) variables:
 
 $$\log rgdppc_{2000} \approx (rugged+dist-coast) \times africa$$
 
 ```{r,results='hide'}
 clm1 <- lm(log(rgdppc_2000)~(rugged+dist_coast)*cont_africa,data=rugged)
+clm1_se <- coeftest(clm1, vcov = vcovHC, type = "HC1")
 ```
 
-```{r}
-clm1 <- coeftest(clm1, vcov = vcovHC, type = "HC1")
-#reporducing table 1
-stargazer(clm1, type = "html")
-```
-
-```{r,results='hide'}
+```{r,results='hide' ,echo=FALSE}
 blm1 <- stan_glm(log(rgdppc_2000)~(rugged+dist_coast)*cont_africa,data=rugged, seed=111)
 
 table1 <- round(cbind(coef(clm1),coef(blm1)),3)
@@ -68,15 +63,15 @@ colnames(table1) <- c("Classical Linear Regression","Bayesian Regression")
 ```
 
 
-```{r,results='asis',message=FALSE}
-stargazer(table1,out="Table 1.html", type = "html")
+```{r,results='asis',message=FALSE, echo=FALSE}
+stargazer(clm1_se, out="Table 1", type = "latex")
+#We get very similar results to the original table both for the classical linear model as well as for the Bayesian estimation.
 ```
 
-We get very similar results to the original table both for the classical linear model as well as for the Bayesian estimation.
 
-(2) Plot posterior samples of the ruggedness effect in Africa against the effect in the rest of the world in a scatterplot. What can you say about the effect?
+## (2) Plot posterior samples of the ruggedness effect in Africa against the effect in the rest of the world in a scatterplot. What can you say about the effect?
 
-```{r}
+```{r, echo = FALSE}
 posterior_sample <- as.data.frame(blm1)
 plot(posterior_sample$rugged,posterior_sample$`rugged:cont_africa`,
      xlab = "Ruggedness Effect in Rest of the World",
@@ -87,13 +82,14 @@ plot(posterior_sample$rugged,posterior_sample$`rugged:cont_africa`,
 
 The ruggedness effect in Africa and that in the rest of the world seem to be negatively correlated. A larger ruggedness effect in the rest of the world goes in hand with a smaller one in Africa.
 
-(3) Estimate three additional models — one without the distance to coast, one that uses population in 1400 (use log 1+pop) instead, and one with both controls.
+## (3) Estimate three additional models — one without the distance to coast, one that uses population in 1400 (use log 1+pop) instead, and one with both controls.
 
-```{r,results='hide'}
+```{r,results='hide', echo = FALSE}
 #Bayesian estimation
-blm2 <- stan_glm(log(rgdppc_2000)~rugged*cont_africa,data=rugged, seed=111)
-blm3 <- stan_glm(log(rgdppc_2000)~(rugged+log(1+pop_1400))*cont_africa,data=rugged, seed=111)
-blm4 <- stan_glm(log(rgdppc_2000)~(rugged+dist_coast+log(1+pop_1400))*cont_africa,data=rugged, seed=111)
+blm2 <- stan_glm(log(rgdppc_2000) ~ rugged*cont_africa,data=rugged, seed=111)
+blm3 <- stan_glm(log(rgdppc_2000) ~ (rugged + log(1 + pop_1400))*cont_africa,data=rugged, seed=111)
+blm4 <- stan_glm(log(rgdppc_2000) ~ (rugged + dist_coast + log(1 + pop_1400))*cont_africa, data=rugged, 
+                 diagnostic_file = file.path(tempdir(), "df.csv"), seed=111)
 
 labels <- row.names(cbind(coef(blm4)))
 Model1 <- c(coef(blm1)[1:3],NA,coef(blm1)[4:6],NA)
@@ -120,7 +116,7 @@ rownames(table3) <- labels
 #stargazer(table2,out="Table2.html")
 ```
 
-(4)  Discuss (conceptually different) approaches to selecting one of these models for inference. Hint: Consider the difference between causal inference and other inference tasks.
+## (4)  Discuss (conceptually different) approaches to selecting one of these models for inference. Hint: Consider the difference between causal inference and other inference tasks.
 
 There are several ways to select the "best" models, such as
 
@@ -156,7 +152,7 @@ In our example, we use Bayesian model comparison to determine the best fitting m
 
 **Bayesian model comparison**
 
-```{r,warning=FALSE}
+```{r,warning=FALSE, echo = FALSE, results='hide'}
 model_names <- c("Model 1","Model 2", "Model 3", "Model 4")
 
 waic_blm1 <- waic(blm1)
@@ -181,4 +177,57 @@ model_names[which.min(loo_values)]
 ```
 
 According to both the WAIC and the LOO, model 4 is the most appropriate. It is relatively complex so even though it might be good for forecasting, a simpler model might be better for causal inference. 
+
+## Investigate the sensitivity of the estimates of your model of choice to different prior parameters.
+
+Our model of choice is model 4. We now investigate the sensitivity to four different prior parameters.  
+First we consider the frivolous and fictional case of a flat prior.
+```{r, echo = FALSE, results='hide'}
+#Specifying the flat prior with prior = NULL
+flat_prior_test <- stan_glm(log(rgdppc_2000) ~ (rugged + dist_coast + log(1+pop_1400))*cont_africa, data = rugged, seed=111, diagnostic_file = file.path(tempdir(), "df.csv"), prior = NULL)
+
+prior_summary(flat_prior_test)
+print(flat_prior_test)
+
+
+#Specifying an informative prior with prior where we are extremely sure that there is no differential effect of ruggedness in africa  
+prior_1 <- normal(location = c(0, 0, 0, 0, 0, 0, 0), scale = c(1, 1, 1, 1, 1, 1, 1))
+
+mod_prior_1 <- stan_glm(log(rgdppc_2000) ~ (rugged + dist_coast + log(1+pop_1400))*cont_africa, data = rugged, seed=111, prior = prior_1, diagnostic_file = file.path(tempdir(), "df.csv"))
+
+
+prior_summary(prior_1)
+print(prior_1)
+
+
+#Specifying an informative prior with prior where we are extremely sure that there is no differential effect of ruggedness in africa  
+prior_2 <- normal(location = c(-0.5, -0.5, 0, -1, 1, 0, 0), 
+                   scale = c(2, 2, 1, 0.5, 2, 2, 2))
+
+mod_prior_2 <- stan_glm(log(rgdppc_2000) ~ (rugged + dist_coast + log(1+pop_1400))*cont_africa, data = rugged, seed=111, diagnostic_file = file.path(tempdir(), "df.csv"),
+prior = prior_2)
+
+prior_summary(mod_prior_2)
+print(mod_prior_2)
+
+
+#Specifying an informative prior with prior with negative effect for ruggeed:Africa i.e. N(-2, 0.1)
+prior_3 <- normal(location = c(-0.5, -0.5, 0, -1, -2, 0, 0), 
+                   scale = c(2, 2, 1, 0.5, 0.1, 2, 2))
+
+mod_prior_3 <- stan_glm(log(rgdppc_2000) ~ (rugged + dist_coast + log(1+pop_1400))*cont_africa, data = rugged, seed=111, diagnostic_file = file.path(tempdir(), "df.csv"), 
+                        prior = prior_3)
+
+prior_summary(mod_prior_3)
+print(mod_prior_3)
+```
+
+```{r, echo = FALSE, results='hide'}
+# Compute the marginal likelihood using bridge sampler
+blm4_ml <- bridge_sampler(blm4)
+flat_prior_test_ml <- bridge_sampler(flat_prior_test)
+mod_prior_1_ml <- bridge_sampler(mod_prior_1)
+mod_prior_2_ml <- bridge_sampler(mod_prior_2)
+mod_prior_3_ml <- bridge_sampler(mod_prior_3)
+```
 
